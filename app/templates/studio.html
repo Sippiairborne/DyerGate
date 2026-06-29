@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DyerGate Studio</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0b1020; color: #e2e8f0; font-family: system-ui; }
+  .canvas { background: #131a2b; border: 1px solid #1f2a44; border-radius: 12px; min-height: 600px; position: relative; overflow: auto; }
+  .node { position: absolute; background: #1e293b; border: 2px solid #4f46e5; border-radius: 8px; padding: 12px; min-width: 180px; cursor: move; }
+  .node.selected { border-color: #f59e0b; }
+  .node .handle { position: absolute; width: 12px; height: 12px; background: #4f46e5; border-radius: 50%; right: -6px; top: 50%; cursor: crosshair; }
+  .palette-item { background: #1e293b; border: 1px solid #1f2a44; border-radius: 6px; padding: 8px 12px; cursor: grab; margin-bottom: 6px; }
+  .palette-item:hover { background: #2d3a52; }
+  button { background: #4f46e5; color: white; padding: 6px 12px; border-radius: 6px; }
+  button.secondary { background: #475569; }
+  input, textarea, select { background: #0b1020; border: 1px solid #1f2a44; color: #e2e8f0; padding: 6px 10px; border-radius: 6px; width: 100%; }
+  svg.edges { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+</style>
+</head>
+<body class="p-6">
+
+<header class="flex justify-between items-center mb-4">
+  <h1 class="text-2xl font-bold">🎨 DyerGate Studio</h1>
+  <div class="flex gap-2">
+    <input id="wfName" class="bg-[#131a2b]" placeholder="workflow name" value="my-workflow">
+    <button onclick="saveWorkflow()">💾 Save</button>
+    <button class="secondary" onclick="runWorkflow()">▶ Run</button>
+    <button class="secondary" onclick="exportDAG()">⬇ Export</button>
+  </div>
+</header>
+
+<div class="grid grid-cols-12 gap-4">
+
+  <!-- Palette -->
+  <aside class="col-span-2">
+    <h3 class="font-semibold mb-2">Nodes</h3>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'llm')">🤖 LLM</div>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'skill')">🛠️ Skill</div>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'rag')">📚 RAG</div>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'conditional')">🔀 Conditional</div>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'parallel')">⚡ Parallel</div>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'http')">🌐 HTTP</div>
+    <div class="palette-item" draggable="true" ondragstart="dragStart(event,'transform')">🔧 Transform</div>
+  </aside>
+
+  <!-- Canvas -->
+  <main class="col-span-7">
+    <div id="canvas" class="canvas"
+         ondrop="drop(event)" ondragover="event.preventDefault()"
+         onclick="deselectAll(event)">
+      <svg class="edges" id="edges"></svg>
+    </div>
+  </main>
+
+  <!-- Inspector -->
+  <aside class="col-span-3">
+    <h3 class="font-semibold mb-2">Inspector</h3>
+    <div id="inspector" class="bg-[#131a2b] border border-[#1f2a44] rounded-lg p-3 min-h-[400px]">
+      <p class="text-slate-500 text-sm">Select a node to edit</p>
+    </div>
+    <h3 class="font-semibold mt-4 mb-2">Run Output</h3>
+    <pre id="output" class="bg-[#131a2b] border border-[#1f2a44] rounded-lg p-3 text-xs overflow-auto max-h-64"></pre>
+  </aside>
+</div>
+
+<script>
+const API_KEY = prompt('Admin API key:');
+let nodes = []; // {id, type, x, y, config, next:[ids]}
+let edges = []; // [fromId, toId]
+let nextId = 1;
+let selected = null;
+let dragData = null;
+
+function dragStart(e, type) {
+  e.dataTransfer.setData('type', type);
+}
+
+function drop(e) {
+  e.preventDefault();
+  const type = e.dataTransfer.getData('type');
+  const rect = e.currentTarget.getBoundingClientRect();
+  const id = 'n' + (nextId++);
+  nodes.push({
+    id, type,
+    x: e.clientX - rect.left - 90,
+    y: e.clientY - rect.top - 30,
+    config: defaultConfig(type),
+    next: [],
+  });
+  render();
+}
+
+function defaultConfig(type) {
+  if (type === 'llm') return {prompt: 'Summarize: {input}', model: 'llama3'};
+  if (type === 'skill') return {skill_slug: 'translate_es', params: {}};
+  if (type === 'rag') return {collection: 'docs', question: '{input}', top_k: 5};
+  if (type === 'conditional') return {condition: 'len({input}) > 0'};
+  if (type === 'parallel') return {};
+  if (type === 'http') return {url: 'https://api.example.com', method: 'POST', body: '{}'};
+  if (type === 'transform') return {expression: 'input.upper()'};
+  return {};
+}
+
+function render() {
+  const canvas = document.getElementById('canvas');
+  // Remove existing nodes (keep edges SVG)
+  canvas.querySelectorAll('.node').forEach(n => n.remove());
+  nodes.forEach(n => {
+    const div = document.createElement('div');
+    div.className = 'node' + (selected === n.id ? ' selected' : '');
+    div.style.left = n.x + 'px';
+    div.style.top = n.y + 'px';
+    div.dataset.id = n.id;
+    div.ondblclick = () => connectMode(n.id);
+    div.onmousedown = (e) => { if (e.target.classList.contains('handle')) return; startDrag(e, n.id); };
+    div.onclick = (e) => { e.stopPropagation(); select(n.id); };
+    div.innerHTML = `
+      <div class="flex justify-between items-center mb-1">
+        <span class="text-xs text-slate-400">${n.type}</span>
+        <button onclick="event.stopPropagation();deleteNode('${n.id}')" class="text-red-400 text-xs">×</button>
+      </div>
+      <div class="font-mono text-sm">${n.id}</div>
+      <div class="handle" data-handle="${n.id}"></div>
+    `;
+    canvas.appendChild(div);
+  });
+  drawEdges();
+}
+
+function select(id) {
+  selected = id;
+  render();
+  const n = nodes.find(x => x.id === id);
+  if (!n) return;
+  document.getElementById('inspector').innerHTML = `
+    <div class="space-y-2">
+      <label class="text-xs text-slate-400">ID</label>
+      <input value="${n.id}" readonly>
+      <label class="text-xs text-slate-400">Type</label>
+      <input value="${n.type}" readonly>
+      <label class="text-xs text-slate-400">Config (JSON)</label>
+      <textarea id="cfg" rows="10">${JSON.stringify(n.config, null, 2)}</textarea>
+      <button onclick="updateConfig('${n.id}')">Apply</button>
+    </div>
+  `;
+}
+
+function updateConfig(id) {
+  const n = nodes.find(x => x.id === id);
+  try { n.config = JSON.parse(document.getElementById('cfg').value); render(); }
+  catch (e) { alert('Invalid JSON'); }
+}
+
+function deleteNode(id) {
+  nodes = nodes.filter(n => n.id !== id);
+  edges = edges.filter(e => e[0] !== id && e[1] !== id);
+  nodes.forEach(n => n.next = n.next.filter(x => x !== id));
+  if (selected === id) selected = null;
+  render();
+}
+
+function deselectAll() { selected = null; render(); }
+
+function connectMode(fromId) {
+  // Click another node to connect
+  const target = prompt('Enter target node ID to connect to:');
+  if (target && nodes.find(n => n.id === target)) {
+    edges.push([fromId, target]);
+    const from = nodes.find(n => n.id === fromId);
+    if (from && !from.next.includes(target)) from.next.push(target);
+    render();
+  }
+}
+
+function startDrag(e, id) {
+  const n = nodes.find(x => x.id === id);
+  const startX = e.clientX, startY = e.clientY;
+  const ox = n.x, oy = n.y;
+  function move(ev) {
+    n.x = ox + (ev.clientX - startX);
+    n.y = oy + (ev.clientY - startY);
+    render();
+  }
+  function up() {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+  }
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+}
+
+function drawEdges() {
+  const svg = document.getElementById('edges');
+  svg.innerHTML = '';
+  const canvasRect = document.getElementById('canvas').getBoundingClientRect();
+  edges.forEach(([fromId, toId]) => {
+    const a = nodes.find(n => n.id === fromId);
+    const b = nodes.find(n => n.id === toId);
+    if (!a || !b) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const x1 = a.x + 180, y1 = a.y + 30;
+    const x2 = b.x, y2 = b.y + 30;
+    const cx = (x1 + x2) / 2;
+    line.setAttribute('d', `M ${x1} ${y1} C ${cx} ${y1}, ${cx} ${y2}, ${x2} ${y2}`);
+    line.setAttribute('stroke', '#4f46e5');
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('fill', 'none');
+    svg.appendChild(line);
+  });
+}
+
+async function saveWorkflow() {
+  const slug = document.getElementById('wfName').value;
+  const wf = {
+    slug, name: slug,
+    entry_node_id: nodes[0]?.id || 'n1',
+    nodes: nodes.map(n => ({id: n.id, type: n.type, config: n.config, next: n.next})),
+  };
+  const r = await fetch(`/v1/workflows?slug=${slug}&name=${slug}&entry_node_id=${wf.entry_node_id}`, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json'},
+    body: JSON.stringify(wf),
+  });
+  document.getElementById('output').textContent = await r.text();
+}
+
+async function runWorkflow() {
+  const slug = document.getElementById('wfName').value;
+  const input = prompt('Workflow input JSON:', '{"topic":"DyerGate"}');
+  if (!input) return;
+  const r = await fetch(`/v1/workflows/${slug}/run`, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json'},
+    body: input,
+  });
+  const run = await r.json();
+  // Poll for completion
+  let attempts = 0;
+  while (attempts < 60) {
+    await new Promise(r => setTimeout(r, 1000));
+    const r2 = await fetch(`/v1/workflows/runs/${run.run_id}`, {
+      headers: {'Authorization': `Bearer ${API_KEY}`}
+    });
+    const status = await r2.json();
+    document.getElementById('output').textContent = JSON.stringify(status, null, 2);
+    if (['completed','failed','canceled'].includes(status.status)) break;
+    attempts++;
+  }
+}
+
+function exportDAG() {
+  const dag = {
+    nodes: nodes.map(n => ({id: n.id, type: n.type, config: n.config, next: n.next})),
+    entry_node_id: nodes[0]?.id,
+  };
+  const blob = new Blob([JSON.stringify(dag, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'workflow.json';
+  a.click();
+}
+
+render();
+</script>
+</body>
+</html>

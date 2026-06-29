@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DyerGate — Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  body { background: #0b1020; color: #e2e8f0; font-family: system-ui; }
+  .sidebar { background: #0a0e1c; }
+  .nav-item { padding: 10px 16px; border-radius: 8px; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .nav-item:hover { background: #1f2a44; }
+  .nav-item.active { background: #4f46e5; color: white; }
+  .card { background: #131a2b; border: 1px solid #1f2a44; border-radius: 12px; }
+  .btn { background: #4f46e5; color: white; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+  .btn:hover { background: #4338ca; }
+  .btn-secondary { background: #475569; }
+  .btn-danger { background: #dc2626; }
+  .input, select, textarea { background: #0b1020; border: 1px solid #1f2a44; color: #e2e8f0; padding: 8px 12px; border-radius: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 10px; border-bottom: 1px solid #1f2a44; text-align: left; font-size: 14px; }
+  th { color: #94a3b8; font-weight: 600; }
+  .tag { background: #1f2a44; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+  iframe { width: 100%; height: calc(100vh - 100px); border: none; background: #0b1020; }
+</style>
+</head>
+<body x-data="{page:'dashboard'}">
+
+<div class="flex h-screen">
+
+  <!-- Sidebar -->
+  <aside class="sidebar w-64 border-r border-[#1f2a44] p-4 overflow-y-auto">
+    <h1 class="text-xl font-bold mb-6 px-2">⚡ DyerGate</h1>
+    <nav class="space-y-1 text-sm">
+      <div class="nav-item" :class="{active: page==='dashboard'}" @click="page='dashboard'">📊 Overview</div>
+      <div class="nav-item" :class="{active: page==='clients'}" @click="page='clients';$nextTick(()=>document.getElementById('frame').src='/dashboard/clients')">👥 Clients</div>
+      <div class="nav-item" :class="{active: page==='analytics'}" @click="page='analytics';$nextTick(()=>document.getElementById('frame').src='/analytics?org_id=1')">📈 Analytics</div>
+      <div class="nav-item" :class="{active: page==='packages'}" @click="page='packages';$nextTick(()=>document.getElementById('frame').src='/dashboard/packages')">📦 Packages</div>
+      <div class="nav-item" :class="{active: page==='audit'}" @click="page='audit';$nextTick(()=>document.getElementById('frame').src='/dashboard/audit')">🔍 Audit</div>
+      <div class="nav-item" :class="{active: page==='finetune'}" @click="page='finetune';$nextTick(()=>document.getElementById('frame').src='/dashboard/finetune')">🧠 Fine-tuning</div>
+      <div class="nav-item" :class="{active: page==='eval'}" @click="page='eval';$nextTick(()=>document.getElementById('frame').src='/dashboard/eval')">🎯 Evals</div>
+      <div class="nav-item" :class="{active: page==='workflows'}" @click="page='workflows';$nextTick(()=>document.getElementById('frame').src='/dashboard/workflows')">🔄 Workflows</div>
+      <div class="nav-item" :class="{active: page==='voice'}" @click="page='voice';$nextTick(()=>document.getElementById('frame').src='/dashboard/voice')">🎤 Voice</div>
+      <div class="nav-item" :class="{active: page==='images'}" @click="page='images';$nextTick(()=>document.getElementById('frame').src='/dashboard/images')">🖼️ Images</div>
+      <div class="nav-item" :class="{active: page==='rag'}" @click="page='rag';$nextTick(()=>document.getElementById('frame').src='/dashboard/rag')">📚 RAG</div>
+      <div class="nav-item" :class="{active: page==='marketplace'}" @click="page='marketplace';$nextTick(()=>document.getElementById('frame').src='/dashboard/marketplace')">🏪 Marketplace</div>
+      <div class="nav-item" :class="{active: page==='integrations'}" @click="page='integrations';$nextTick(()=>document.getElementById('frame').src='/dashboard/integrations')">🔌 Integrations</div>
+      <div class="nav-item" :class="{active: page==='forecast'}" @click="page='forecast';$nextTick(()=>document.getElementById('frame').src='/dashboard/forecast')">🔮 Forecast</div>
+      <div class="nav-item" :class="{active: page==='studio'}" @click="page='studio';$nextTick(()=>document.getElementById('frame').src='/studio')">🎨 Studio</div>
+      <div class="nav-item" :class="{active: page==='chat'}" @click="page='chat';$nextTick(()=>document.getElementById('frame').src='/chat?api_key='+apiKey)">💬 Chat UI</div>
+      <div class="nav-item" :class="{active: page==='settings'}" @click="page='settings';$nextTick(()=>document.getElementById('frame').src='/dashboard/settings')">⚙️ Settings</div>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-hidden">
+    <header class="flex justify-between items-center px-6 py-3 border-b border-[#1f2a44]">
+      <div class="text-sm text-slate-400" x-text="page.toUpperCase()"></div>
+      <div class="flex gap-2 items-center text-sm">
+        <input id="apiKey" placeholder="Admin API key" class="input text-xs" style="width:240px">
+        <button class="btn text-xs" onclick="localStorage.setItem('dg_admin', document.getElementById('apiKey').value);location.reload()">Save</button>
+      </div>
+    </header>
+
+    <!-- Overview iframe content rendered inline -->
+    <div x-show="page==='dashboard'" class="p-6 overflow-y-auto" id="overview" style="height: calc(100vh - 60px)">
+      <div class="grid grid-cols-4 gap-4 mb-6">
+        <div class="card p-4"><div class="text-slate-400 text-sm">Active Clients</div><div class="text-2xl font-semibold" id="kpi-clients">–</div></div>
+        <div class="card p-4"><div class="text-slate-400 text-sm">30d Revenue</div><div class="text-2xl font-semibold" id="kpi-revenue">–</div></div>
+        <div class="card p-4"><div class="text-slate-400 text-sm">RPM</div><div class="text-2xl font-semibold" id="kpi-rpm">–</div></div>
+        <div class="card p-4"><div class="text-slate-400 text-sm">Outstanding</div><div class="text-2xl font-semibold" id="kpi-outstanding">–</div></div>
+      </div>
+      <div class="card p-4">
+        <h3 class="font-semibold mb-3">Recent Activity</h3>
+        <div id="recent-activity">Loading…</div>
+      </div>
+    </div>
+
+    <iframe x-show="page!=='dashboard'" id="frame"></iframe>
+  </main>
+</div>
+
+<script>
+const apiKey = localStorage.getItem('dg_admin') || '';
+if (!apiKey) {
+  apiKey = prompt('Admin API key:');
+  localStorage.setItem('dg_admin', apiKey);
+}
+window.apiKey = apiKey;
+
+async function api(path) {
+  const r = await fetch(path, {headers: {'X-Admin-Key': apiKey}});
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function loadOverview() {
+  try {
+    const k = await api('/admin/kpis');
+    document.getElementById('kpi-clients').textContent = k.active_clients ?? k.active_orgs ?? 0;
+    document.getElementById('kpi-revenue').textContent = '$' + (k.revenue_30d || 0).toFixed(2);
+    document.getElementById('kpi-rpm').textContent = k.rpm || 0;
+    document.getElementById('kpi-outstanding').textContent = '$' + (k.outstanding_balance || 0).toFixed(2);
+
+    const audit = await api('/admin/audit?limit=15');
+    document.getElementById('recent-activity').innerHTML = `
+      <table>
+        <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead>
+        <tbody>${audit.map(a => `
+          <tr>
+            <td>${new Date(a.created_at).toLocaleString()}</td>
+            <td>${a.actor}</td>
+            <td><span class="tag">${a.action}</span></td>
+            <td>${a.target_id || '–'}</td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  } catch (e) { console.error(e); }
+}
+loadOverview();
+setInterval(loadOverview, 30000);
+</script>
+</body>
+</html>
+The remaining UI files (compact versions)

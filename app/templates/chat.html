@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DyerGate Chat</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0b1020; color: #e2e8f0; font-family: system-ui; }
+  .msg { max-width: 80%; padding: 10px 14px; border-radius: 12px; margin: 4px 0; }
+  .user { background: #4f46e5; color: white; margin-left: auto; }
+  .assistant { background: #131a2b; border: 1px solid #1f2a44; }
+  .input-area { background: #131a2b; border: 1px solid #1f2a44; border-radius: 12px; }
+  button { background: #4f46e5; color: white; padding: 8px 16px; border-radius: 8px; }
+  button:hover { background: #4338ca; }
+  select, input { background: #0b1020; border: 1px solid #1f2a44; color: #e2e8f0; padding: 6px 10px; border-radius: 6px; }
+</style>
+</head>
+<body class="flex flex-col h-screen">
+
+<header class="flex justify-between items-center px-6 py-4 border-b border-[#1f2a44]">
+  <h1 class="text-xl font-semibold">⚡ DyerGate Chat</h1>
+  <div class="flex gap-2 items-center">
+    <select id="model">
+      <option value="llama3">llama3</option>
+      <option value="mistral">mistral</option>
+      <option value="qwen">qwen</option>
+    </select>
+    <button onclick="newChat()">+ New</button>
+  </div>
+</header>
+
+<div id="messages" class="flex-1 overflow-y-auto p-6 flex flex-col"></div>
+
+<div class="p-4">
+  <div class="input-area flex gap-2 p-2">
+    <textarea id="input" class="flex-1 bg-transparent resize-none outline-none p-2" rows="2"
+              placeholder="Type a message… (Shift+Enter for new line)"></textarea>
+    <button onclick="send()">Send</button>
+  </div>
+  <div class="text-xs text-slate-500 mt-2 px-2">
+    Streaming via WebSocket · <span id="status">disconnected</span>
+  </div>
+</div>
+
+<script>
+const API_KEY = new URLSearchParams(location.search).get('api_key') || prompt('API key:');
+let ws = null, history = [];
+
+function connect() {
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?api_key=${API_KEY}`);
+  ws.onopen = () => document.getElementById('status').textContent = 'connected';
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'disconnected — reconnecting in 3s';
+    setTimeout(connect, 3000);
+  };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.action === 'chunk') handleChunk(m);
+    else if (m.action === 'complete') handleComplete(m);
+    else if (m.error) alert(m.error);
+  };
+}
+
+function addMessage(role, text) {
+  const div = document.getElementById('messages');
+  const msg = document.createElement('div');
+  msg.className = `msg ${role}`;
+  msg.textContent = text;
+  div.appendChild(msg);
+  div.scrollTop = div.scrollHeight;
+  return msg;
+}
+
+function newChat() {
+  history = [];
+  document.getElementById('messages').innerHTML = '';
+}
+
+let currentAssistant = null;
+function handleChunk(m) {
+  if (!currentAssistant) {
+    currentAssistant = addMessage('assistant', '');
+  }
+  currentAssistant.textContent += m.delta || '';
+  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+function handleComplete(m) {
+  if (currentAssistant) {
+    history.push({role: 'assistant', content: currentAssistant.textContent});
+    currentAssistant = null;
+  }
+  const status = document.getElementById('status');
+  status.textContent = `connected · cost: $${m.cost.toFixed(6)} · ${m.input_tokens}+${m.output_tokens} tokens`;
+}
+
+async function send() {
+  const input = document.getElementById('input');
+  const text = input.value.trim();
+  if (!text) return;
+  history.push({role: 'user', content: text});
+  addMessage('user', text);
+  input.value = '';
+  ws.send(JSON.stringify({
+    action: 'chat',
+    model: document.getElementById('model').value,
+    messages: history.slice(-20),
+  }));
+}
+
+document.getElementById('input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+
+connect();
+</script>
+</body>
+</html>
